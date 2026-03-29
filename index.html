@@ -1,0 +1,2099 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<title>🎵 谱面阅读器 | Sheet Music Viewer</title>
+<style>
+  /* ===== CSS Variables & Reset ===== */
+  :root {
+    --bg-primary: #1a1a2e;
+    --bg-secondary: #16213e;
+    --bg-card: #0f3460;
+    --bg-input: #1a1a3e;
+    --text-primary: #e8e8e8;
+    --text-secondary: #a0a0b8;
+    --accent: #e94560;
+    --accent-hover: #ff6b81;
+    --accent-green: #2ecc71;
+    --accent-blue: #3498db;
+    --accent-orange: #f39c12;
+    --border-color: #2a2a4a;
+    --shadow: 0 4px 20px rgba(0,0,0,0.3);
+    --radius: 12px;
+    --transition: all 0.3s ease;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ===== Scrollbar ===== */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--accent); border-radius: 3px; }
+
+  /* ===== Input Panel (Home Screen) ===== */
+  #inputPanel {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 40px 20px;
+    animation: fadeIn 0.5s ease;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .app-header {
+    text-align: center;
+    margin-bottom: 40px;
+  }
+
+  .app-header h1 {
+    font-size: 2.5rem;
+    font-weight: 700;
+    background: linear-gradient(135deg, var(--accent), var(--accent-blue));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 8px;
+  }
+
+  .app-header p {
+    color: var(--text-secondary);
+    font-size: 1.1rem;
+  }
+
+  .main-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    padding: 32px;
+    width: 100%;
+    max-width: 700px;
+    box-shadow: var(--shadow);
+  }
+
+  .card-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .url-textarea {
+    width: 100%;
+    min-height: 160px;
+    background: var(--bg-input);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--text-primary);
+    padding: 14px 16px;
+    font-size: 14px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    line-height: 1.6;
+    resize: vertical;
+    transition: var(--transition);
+  }
+
+  .url-textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(233,69,96,0.15);
+  }
+
+  .url-textarea::placeholder {
+    color: var(--text-secondary);
+    opacity: 0.6;
+  }
+
+  .btn-row {
+    display: flex;
+    gap: 12px;
+    margin-top: 20px;
+    flex-wrap: wrap;
+  }
+
+  .btn {
+    padding: 12px 28px;
+    border: none;
+    border-radius: 8px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .btn-primary {
+    background: linear-gradient(135deg, var(--accent), #c0392b);
+    color: #fff;
+    flex: 1;
+  }
+
+  .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(233,69,96,0.4); }
+
+  .btn-secondary {
+    background: var(--bg-card);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+  }
+
+  .btn-secondary:hover { border-color: var(--accent); background: var(--bg-input); }
+
+  .btn-small {
+    padding: 6px 14px;
+    font-size: 13px;
+    border-radius: 6px;
+  }
+
+  .btn-danger {
+    background: rgba(231,76,60,0.15);
+    color: #e74c3c;
+    border: 1px solid rgba(231,76,60,0.3);
+  }
+
+  .btn-danger:hover { background: rgba(231,76,60,0.25); }
+
+  /* ===== Paste / Drop Zone ===== */
+  .paste-zone {
+    width: 100%;
+    min-height: 120px;
+    border: 2px dashed var(--border-color);
+    border-radius: 10px;
+    background: var(--bg-input);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 16px;
+    margin-top: 16px;
+    cursor: pointer;
+    transition: var(--transition);
+    position: relative;
+  }
+
+  .paste-zone:hover,
+  .paste-zone.dragover {
+    border-color: var(--accent);
+    background: rgba(233,69,96,0.06);
+  }
+
+  .paste-zone-hint {
+    color: var(--text-secondary);
+    font-size: 14px;
+    text-align: center;
+    pointer-events: none;
+    user-select: none;
+    width: 100%;
+  }
+
+  .paste-zone-hint .icon { font-size: 2rem; margin-bottom: 6px; }
+  .paste-zone-hint p { margin: 4px 0; }
+  .paste-zone-hint .sub { font-size: 12px; opacity: 0.6; }
+
+  .paste-zone.has-images {
+    justify-content: flex-start;
+    align-items: flex-start;
+    min-height: 80px;
+  }
+
+  .paste-thumb {
+    position: relative;
+    width: 90px;
+    height: 120px;
+    border-radius: 6px;
+    overflow: hidden;
+    border: 1px solid var(--border-color);
+    flex-shrink: 0;
+    background: #0a0a1a;
+  }
+
+  .paste-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .paste-thumb .thumb-index {
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    background: rgba(0,0,0,0.7);
+    color: #fff;
+    font-size: 10px;
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+
+  .paste-thumb .thumb-remove {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: rgba(231,76,60,0.9);
+    color: #fff;
+    border: none;
+    font-size: 12px;
+    line-height: 20px;
+    text-align: center;
+    cursor: pointer;
+    display: none;
+    padding: 0;
+  }
+
+  .paste-thumb:hover .thumb-remove { display: block; }
+
+  .paste-actions {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border-color);
+  }
+
+  .paste-count {
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+
+  .input-tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 16px;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .input-tab {
+    padding: 8px 20px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    transition: var(--transition);
+  }
+
+  .input-tab:hover { color: var(--text-primary); }
+
+  .input-tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* ===== Favorites Section ===== */
+  .favorites-section {
+    width: 100%;
+    max-width: 700px;
+    margin-top: 30px;
+  }
+
+  .favorites-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+  }
+
+  .favorites-header h3 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .fav-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .fav-item {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    transition: var(--transition);
+  }
+
+  .fav-item:hover {
+    border-color: var(--accent);
+    transform: translateX(4px);
+  }
+
+  .fav-info {
+    flex: 1;
+  }
+
+  .fav-name {
+    font-weight: 600;
+    font-size: 15px;
+    margin-bottom: 4px;
+  }
+
+  .fav-meta {
+    color: var(--text-secondary);
+    font-size: 13px;
+  }
+
+  .fav-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--text-secondary);
+  }
+
+  .empty-state .icon { font-size: 3rem; margin-bottom: 12px; }
+
+  /* ===== Save Modal ===== */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(4px);
+  }
+
+  .modal-overlay.active { display: flex; }
+
+  .modal {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    padding: 28px;
+    width: 90%;
+    max-width: 420px;
+    box-shadow: var(--shadow);
+    animation: fadeIn 0.3s ease;
+  }
+
+  .modal h3 { margin-bottom: 16px; }
+
+  .modal input[type="text"] {
+    width: 100%;
+    padding: 12px 14px;
+    background: var(--bg-input);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--text-primary);
+    font-size: 15px;
+    margin-bottom: 16px;
+  }
+
+  .modal input[type="text"]:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+
+  /* ===== Viewer Panel ===== */
+  #viewerPanel {
+    display: none;
+    flex-direction: column;
+    height: 100vh;
+    background: #111;
+    position: relative;
+  }
+
+  /* Toolbar */
+  .toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 16px;
+    background: rgba(20,20,40,0.95);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border-color);
+    z-index: 100;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    transition: opacity 0.3s, transform 0.3s;
+  }
+
+  .toolbar.hidden {
+    opacity: 0;
+    transform: translateY(-100%);
+    pointer-events: none;
+  }
+
+  .toolbar-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .toolbar-btn {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: var(--transition);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+  }
+
+  .toolbar-btn:hover { border-color: var(--accent); }
+  .toolbar-btn.active { background: var(--accent); border-color: var(--accent); }
+
+  .speed-display {
+    color: var(--accent-orange);
+    font-weight: 600;
+    font-size: 14px;
+    min-width: 50px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .zoom-display {
+    color: var(--accent-blue);
+    font-weight: 600;
+    font-size: 14px;
+    min-width: 45px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .divider {
+    width: 1px;
+    height: 24px;
+    background: var(--border-color);
+    margin: 0 4px;
+  }
+
+  /* Sheet Container */
+  .sheet-container {
+    flex: 1;
+    overflow: auto;
+    display: flex;
+    position: relative;
+  }
+
+  .sheet-container.vertical {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .sheet-container.horizontal {
+    flex-direction: row;
+    align-items: flex-start;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .sheet-container img {
+    display: block;
+    transition: none;
+    user-select: none;
+    -webkit-user-drag: none;
+    flex-shrink: 0;
+  }
+
+  .sheet-container.vertical img {
+    width: 100%;
+    max-width: var(--sheet-max-width, 100%);
+    height: auto;
+    margin: 0 auto;
+  }
+
+  .sheet-container.horizontal img {
+    height: 100vh;
+    max-height: 100vh;
+    width: auto;
+    object-fit: contain;
+  }
+
+  /* Progress bar */
+  .progress-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--accent), var(--accent-blue));
+    transition: width 0.1s linear;
+    z-index: 200;
+  }
+
+  /* Scroll indicator */
+  .scroll-status {
+    position: fixed;
+    bottom: 16px;
+    right: 16px;
+    background: rgba(20,20,40,0.9);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    z-index: 150;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    opacity: 0;
+    transition: opacity 0.3s;
+    pointer-events: none;
+  }
+
+  .scroll-status.visible { opacity: 1; }
+
+  .auto-scroll-badge {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent-green);
+    animation: pulse 1.5s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  /* Shortcut help overlay */
+  .shortcuts-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 500;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(4px);
+  }
+
+  .shortcuts-overlay.active { display: flex; }
+
+  .shortcuts-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    padding: 32px;
+    max-width: 500px;
+    width: 90%;
+    box-shadow: var(--shadow);
+  }
+
+  .shortcuts-card h3 { margin-bottom: 20px; font-size: 1.2rem; }
+
+  .shortcut-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .shortcut-row:last-child { border-bottom: none; }
+
+  .shortcut-key {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  kbd {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 12px;
+    font-family: 'SF Mono', monospace;
+    color: var(--accent-orange);
+  }
+
+  /* Loading overlay */
+  .loading-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(17,17,17,0.9);
+    z-index: 300;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .loading-overlay.active { display: flex; }
+
+  .loader {
+    width: 48px;
+    height: 48px;
+    border: 3px solid var(--border-color);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .loading-text {
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+
+  /* Toast */
+  .toast {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%) translateY(-100px);
+    background: var(--bg-card);
+    border: 1px solid var(--accent-green);
+    color: var(--text-primary);
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-size: 14px;
+    z-index: 999;
+    transition: transform 0.4s ease;
+    pointer-events: none;
+  }
+
+  .toast.show {
+    transform: translateX(-50%) translateY(0);
+  }
+
+  /* ===== Mobile Touch Toolbar Toggle Hint ===== */
+  .mobile-tap-hint {
+    display: none;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0,0,0,0.75);
+    color: #fff;
+    padding: 12px 24px;
+    border-radius: 10px;
+    font-size: 14px;
+    z-index: 400;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .mobile-tap-hint.show { opacity: 1; }
+
+  /* ===== Mobile Floating Button ===== */
+  .mobile-fab {
+    display: none;
+    position: fixed;
+    z-index: 160;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    border: none;
+    font-size: 20px;
+    cursor: pointer;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.4);
+    align-items: center;
+    justify-content: center;
+  }
+
+  .mobile-fab-back {
+    bottom: calc(24px + env(safe-area-inset-bottom));
+    left: 16px;
+    background: rgba(20,20,40,0.9);
+    color: var(--text-primary);
+  }
+
+  .mobile-fab-scroll {
+    bottom: calc(24px + env(safe-area-inset-bottom));
+    right: 16px;
+    background: var(--accent);
+    color: #fff;
+  }
+
+  .mobile-fab-scroll.active {
+    background: var(--accent-green);
+  }
+
+  /* ===== Mobile Speed Control Popup ===== */
+  .mobile-speed-popup {
+    display: none;
+    position: fixed;
+    bottom: calc(84px + env(safe-area-inset-bottom));
+    right: 16px;
+    background: rgba(20,20,40,0.95);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 12px;
+    z-index: 160;
+    flex-direction: column;
+    gap: 8px;
+    align-items: center;
+    min-width: 120px;
+  }
+
+  .mobile-speed-popup.show { display: flex; }
+
+  .mobile-speed-popup .speed-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+
+  .mobile-speed-popup .speed-value {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--accent-orange);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .mobile-speed-popup .speed-btns {
+    display: flex;
+    gap: 8px;
+  }
+
+  .mobile-speed-popup .speed-btn {
+    width: 40px;
+    height: 36px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-card);
+    color: var(--text-primary);
+    font-size: 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* ===== Responsive: Tablets & Phones ===== */
+  @media (max-width: 768px) {
+    /* --- Safe Area --- */
+    body {
+      padding-top: env(safe-area-inset-top);
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+
+    /* --- Input Panel --- */
+    #inputPanel {
+      padding: 20px 12px;
+      min-height: 100vh;
+      min-height: 100dvh;
+      justify-content: flex-start;
+      padding-top: calc(20px + env(safe-area-inset-top));
+    }
+
+    .app-header { margin-bottom: 20px; }
+    .app-header h1 { font-size: 1.6rem; }
+    .app-header p { font-size: 0.9rem; }
+
+    .main-card {
+      padding: 16px;
+      border-radius: 10px;
+    }
+
+    .url-textarea {
+      min-height: 120px;
+      font-size: 13px;
+      padding: 10px 12px;
+    }
+
+    .btn {
+      padding: 14px 16px;
+      font-size: 15px;
+      justify-content: center;
+    }
+
+    .btn-row {
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .btn-primary, .btn-secondary {
+      flex: none;
+      width: 100%;
+    }
+
+    /* --- Tabs --- */
+    .input-tab {
+      flex: 1;
+      text-align: center;
+      padding: 10px 8px;
+      font-size: 14px;
+    }
+
+    /* --- Paste Zone --- */
+    .paste-zone {
+      min-height: 100px;
+      padding: 12px;
+    }
+
+    .paste-thumb {
+      width: 70px;
+      height: 95px;
+    }
+
+    .paste-thumb .thumb-remove {
+      display: block; /* 手机上始终显示删除按钮 */
+      width: 22px;
+      height: 22px;
+      line-height: 22px;
+      font-size: 14px;
+    }
+
+    /* --- Favorites --- */
+    .favorites-section { margin-top: 20px; }
+
+    .fav-item {
+      padding: 12px 14px;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .fav-actions {
+      align-self: flex-end;
+    }
+
+    .fav-name { font-size: 14px; }
+    .fav-meta { font-size: 12px; }
+
+    /* --- Viewer Toolbar: Hide on mobile, use FABs instead --- */
+    .toolbar {
+      display: none !important;
+    }
+
+    .mobile-fab {
+      display: flex;
+    }
+
+    .mobile-tap-hint {
+      display: block;
+    }
+
+    /* --- Sheet Container Mobile --- */
+    .sheet-container {
+      touch-action: pan-x pan-y;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .sheet-container.horizontal img {
+      height: 100vh;
+      height: 100dvh;
+      max-height: 100vh;
+      max-height: 100dvh;
+    }
+
+    /* --- Progress bar safe area --- */
+    .progress-bar {
+      bottom: env(safe-area-inset-bottom);
+    }
+
+    /* --- Scroll Status --- */
+    .scroll-status {
+      bottom: calc(80px + env(safe-area-inset-bottom));
+      right: 70px;
+      font-size: 12px;
+      padding: 6px 10px;
+    }
+
+    /* --- Modal --- */
+    .modal {
+      width: 94%;
+      padding: 20px;
+    }
+
+    .modal input[type="text"] {
+      font-size: 16px; /* 防止iOS自动缩放 */
+    }
+
+    /* --- Shortcuts --- */
+    .shortcuts-card {
+      padding: 20px;
+      width: 94%;
+    }
+
+    .shortcut-row {
+      font-size: 13px;
+    }
+
+    /* --- Loading --- */
+    .loading-text { font-size: 14px; }
+  }
+
+  /* ===== Small phones ===== */
+  @media (max-width: 380px) {
+    .app-header h1 { font-size: 1.3rem; }
+    .main-card { padding: 12px; }
+    .paste-thumb { width: 60px; height: 80px; }
+    .btn { padding: 12px 12px; font-size: 14px; }
+  }
+
+  /* ===== Landscape phone optimization ===== */
+  @media (max-height: 500px) and (orientation: landscape) {
+    #inputPanel {
+      padding: 10px 16px;
+      justify-content: flex-start;
+    }
+
+    .app-header { margin-bottom: 10px; }
+    .app-header h1 { font-size: 1.2rem; }
+    .app-header p { display: none; }
+
+    .main-card { padding: 12px; }
+    .url-textarea { min-height: 80px; }
+
+    .btn-row { flex-direction: row; }
+    .btn { padding: 10px 16px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ===== Input Panel ===== -->
+<div id="inputPanel">
+  <div class="app-header">
+    <h1>🎵 谱面阅读器</h1>
+    <p>多张曲谱图片无缝拼接，全屏沉浸式查看</p>
+  </div>
+
+  <div class="main-card">
+    <div class="input-tabs">
+      <button class="input-tab active" onclick="switchTab('url')">🔗 链接输入</button>
+      <button class="input-tab" onclick="switchTab('paste')">📋 粘贴图片</button>
+    </div>
+
+    <!-- Tab 1: URL 输入 -->
+    <div class="tab-content active" id="tabUrl">
+      <textarea class="url-textarea" id="urlInput" placeholder="请粘贴图片URL，每行一个&#10;&#10;示例：&#10;https://example.com/sheet-music-page1.jpg&#10;https://example.com/sheet-music-page2.jpg&#10;https://example.com/sheet-music-page3.jpg"></textarea>
+    </div>
+
+    <!-- Tab 2: 粘贴图片 -->
+    <div class="tab-content" id="tabPaste">
+      <div class="paste-zone" id="pasteZone">
+        <div class="paste-zone-hint" id="pasteHint">
+          <div class="icon">📋</div>
+          <p id="pasteHintMain">在此区域粘贴图片 (⌘V)</p>
+          <p class="sub" id="pasteHintSub">也可以拖拽图片文件到这里，或点击选择文件</p>
+        </div>
+      </div>
+      <input type="file" id="fileInput" accept="image/*" multiple style="display:none" />
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="startViewing()">
+        🎼 开始查看
+      </button>
+      <button class="btn btn-secondary" onclick="openSaveModal()">
+        ⭐ 收藏曲谱
+      </button>
+    </div>
+  </div>
+
+  <!-- Favorites -->
+  <div class="favorites-section" id="favSection">
+    <div class="favorites-header">
+      <h3>⭐ 我的收藏</h3>
+    </div>
+    <div class="fav-list" id="favList"></div>
+  </div>
+</div>
+
+<!-- ===== Viewer Panel ===== -->
+<div id="viewerPanel">
+  <div class="toolbar" id="toolbar">
+    <div class="toolbar-group">
+      <button class="toolbar-btn" onclick="backToHome()" title="返回">← 返回</button>
+      <div class="divider"></div>
+      <button class="toolbar-btn" id="layoutBtn" onclick="toggleLayout()" title="切换排列方式">
+        📐 纵向
+      </button>
+      <div class="divider"></div>
+      <button class="toolbar-btn" onclick="adjustZoom(-10)">➖</button>
+      <span class="zoom-display" id="zoomDisplay">100%</span>
+      <button class="toolbar-btn" onclick="adjustZoom(10)">➕</button>
+      <button class="toolbar-btn" onclick="resetZoom()">适应</button>
+    </div>
+
+    <div class="toolbar-group">
+      <button class="toolbar-btn" onclick="adjustSpeed(-0.5)">⏪</button>
+      <span class="speed-display" id="speedDisplay">1.0x</span>
+      <button class="toolbar-btn" onclick="adjustSpeed(0.5)">⏩</button>
+      <button class="toolbar-btn" id="autoScrollBtn" onclick="toggleAutoScroll()">
+        ▶ 自动滚动
+      </button>
+      <div class="divider"></div>
+      <button class="toolbar-btn" onclick="toggleFullscreen()">⛶ 全屏</button>
+      <button class="toolbar-btn" onclick="showShortcuts()">⌨ 快捷键</button>
+    </div>
+  </div>
+
+  <div class="sheet-container horizontal" id="sheetContainer"></div>
+  <div class="progress-bar" id="progressBar"></div>
+  <div class="scroll-status" id="scrollStatus">
+    <span class="auto-scroll-badge"></span>
+    <span>自动滚动中</span>
+  </div>
+
+  <!-- Mobile FABs -->
+  <button class="mobile-fab mobile-fab-back" id="mFabBack" onclick="backToHome()">←</button>
+  <button class="mobile-fab mobile-fab-scroll" id="mFabScroll" onclick="mobileToggleScroll()">▶</button>
+
+  <!-- Mobile Speed Popup -->
+  <div class="mobile-speed-popup" id="mSpeedPopup">
+    <span class="speed-label">滚动速度</span>
+    <span class="speed-value" id="mSpeedValue">1.0x</span>
+    <div class="speed-btns">
+      <button class="speed-btn" onclick="adjustSpeed(-0.5); updateMobileSpeed()">−</button>
+      <button class="speed-btn" onclick="adjustSpeed(0.5); updateMobileSpeed()">+</button>
+    </div>
+    <span class="speed-label" style="margin-top:4px;">缩放</span>
+    <div class="speed-btns">
+      <button class="speed-btn" onclick="adjustZoom(-10)">🔍−</button>
+      <button class="speed-btn" onclick="adjustZoom(10)">🔍+</button>
+    </div>
+    <div class="speed-btns" style="margin-top:2px;">
+      <button class="speed-btn" style="width:auto;padding:0 10px;font-size:12px;" onclick="toggleLayout()">📐 切换</button>
+      <button class="speed-btn" style="width:auto;padding:0 10px;font-size:12px;" onclick="resetZoom()">适应</button>
+    </div>
+  </div>
+</div>
+
+<!-- Mobile Tap Hint -->
+<div class="mobile-tap-hint" id="mobileTapHint">长按右下按钮调出控制面板</div>
+
+<!-- ===== Loading Overlay ===== -->
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="loader"></div>
+  <div class="loading-text" id="loadingText">正在加载曲谱...</div>
+</div>
+
+<!-- ===== Save Modal ===== -->
+<div class="modal-overlay" id="saveModal">
+  <div class="modal">
+    <h3>⭐ 收藏当前曲谱</h3>
+    <input type="text" id="favNameInput" placeholder="输入曲谱名称，如：卡农、月光奏鸣曲..." />
+    <div class="btn-row">
+      <button class="btn btn-secondary" onclick="closeSaveModal()">取消</button>
+      <button class="btn btn-primary" onclick="saveFavorite()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Shortcuts Overlay ===== -->
+<div class="shortcuts-overlay" id="shortcutsOverlay" onclick="hideShortcuts()">
+  <div class="shortcuts-card" onclick="event.stopPropagation()">
+    <h3>⌨ 快捷键列表</h3>
+    <div class="shortcut-row">
+      <span>播放 / 暂停自动滚动</span>
+      <span class="shortcut-key"><kbd>Space</kbd></span>
+    </div>
+    <div class="shortcut-row">
+      <span>加速滚动</span>
+      <span class="shortcut-key"><kbd>↑</kbd> 或 <kbd>+</kbd></span>
+    </div>
+    <div class="shortcut-row">
+      <span>减速滚动</span>
+      <span class="shortcut-key"><kbd>↓</kbd> 或 <kbd>-</kbd></span>
+    </div>
+    <div class="shortcut-row">
+      <span>放大谱面</span>
+      <span class="shortcut-key"><kbd>⌘</kbd> <kbd>+</kbd></span>
+    </div>
+    <div class="shortcut-row">
+      <span>缩小谱面</span>
+      <span class="shortcut-key"><kbd>⌘</kbd> <kbd>-</kbd></span>
+    </div>
+    <div class="shortcut-row">
+      <span>重置缩放</span>
+      <span class="shortcut-key"><kbd>⌘</kbd> <kbd>0</kbd></span>
+    </div>
+    <div class="shortcut-row">
+      <span>切换纵向/横向</span>
+      <span class="shortcut-key"><kbd>L</kbd></span>
+    </div>
+    <div class="shortcut-row">
+      <span>显示/隐藏工具栏</span>
+      <span class="shortcut-key"><kbd>T</kbd></span>
+    </div>
+    <div class="shortcut-row">
+      <span>全屏切换</span>
+      <span class="shortcut-key"><kbd>F</kbd></span>
+    </div>
+    <div class="shortcut-row">
+      <span>返回首页</span>
+      <span class="shortcut-key"><kbd>Esc</kbd></span>
+    </div>
+    <div style="margin-top: 16px; text-align: center;">
+      <button class="btn btn-secondary btn-small" onclick="hideShortcuts()">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Toast ===== -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ===== State =====
+let state = {
+  urls: [],
+  layout: 'horizontal',  // 'vertical' | 'horizontal'
+  zoom: 100,
+  autoScroll: false,
+  scrollSpeed: 1.0,       // px per frame at base rate
+  scrollAnimId: null,
+  toolbarVisible: true,
+  activeTab: 'url',       // 'url' | 'paste'
+  pastedImages: [],       // array of { blob: Blob, dataUrl: string }
+};
+
+// ===== Favorites (localStorage) =====
+const FAV_KEY = 'sheetMusicFavorites';
+
+function getFavorites() {
+  try {
+    return JSON.parse(localStorage.getItem(FAV_KEY) || '[]');
+  } catch { return []; }
+}
+
+function setFavorites(favs) {
+  localStorage.setItem(FAV_KEY, JSON.stringify(favs));
+}
+
+function renderFavorites() {
+  const favs = getFavorites();
+  const section = document.getElementById('favSection');
+  const list = document.getElementById('favList');
+
+  if (favs.length === 0) {
+    list.innerHTML = `
+      <div class="empty-state">
+        <div class="icon">📂</div>
+        <p>暂无收藏，输入曲谱链接后点击"收藏曲谱"保存</p>
+      </div>`;
+    return;
+  }
+
+  list.innerHTML = favs.map((fav, i) => `
+    <div class="fav-item" onclick="loadFavorite(${i})">
+      <div class="fav-info">
+        <div class="fav-name">🎵 ${escapeHtml(fav.name)}</div>
+        <div class="fav-meta">${fav.urls.length} 张图片 · ${fav.type === 'paste' ? '📋 本地粘贴' : '🔗 链接'} · ${fav.date}</div>
+      </div>
+      <div class="fav-actions">
+        <button class="btn btn-small btn-secondary" onclick="event.stopPropagation(); editFavorite(${i})">✏️</button>
+        <button class="btn btn-small btn-danger" onclick="event.stopPropagation(); deleteFavorite(${i})">🗑️</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function loadFavorite(index) {
+  const favs = getFavorites();
+  if (favs[index]) {
+    if (favs[index].type === 'paste') {
+      // 粘贴图片类型：直接进入查看
+      showLoading(true);
+      const container = document.getElementById('sheetContainer');
+      container.innerHTML = '';
+      favs[index].urls.forEach((dataUrl, i) => {
+        const img = document.createElement('img');
+        img.src = dataUrl;
+        img.alt = `曲谱第 ${i + 1} 页`;
+        img.draggable = false;
+        container.appendChild(img);
+      });
+      showLoading(false);
+      showViewer();
+    } else {
+      document.getElementById('urlInput').value = favs[index].urls.join('\n');
+      switchTab('url');
+      showToast(`已加载「${favs[index].name}」`);
+    }
+  }
+}
+
+function openSaveModal() {
+  if (state.activeTab === 'paste') {
+    if (state.pastedImages.length === 0) {
+      showToast('请先粘贴至少一张图片');
+      return;
+    }
+  } else {
+    const urls = parseUrls();
+    if (urls.length === 0) {
+      showToast('请先输入至少一个图片链接');
+      return;
+    }
+  }
+  document.getElementById('favNameInput').value = '';
+  document.getElementById('saveModal').classList.add('active');
+  setTimeout(() => document.getElementById('favNameInput').focus(), 100);
+}
+
+function closeSaveModal() {
+  document.getElementById('saveModal').classList.remove('active');
+}
+
+function saveFavorite() {
+  const name = document.getElementById('favNameInput').value.trim();
+  if (!name) {
+    showToast('请输入曲谱名称');
+    return;
+  }
+
+  let urls = [];
+  let type = 'url';
+  if (state.activeTab === 'paste') {
+    if (state.pastedImages.length === 0) return;
+    urls = state.pastedImages.map(item => item.dataUrl);
+    type = 'paste';
+  } else {
+    urls = parseUrls();
+    if (urls.length === 0) return;
+  }
+
+  const favs = getFavorites();
+  favs.unshift({
+    name,
+    urls,
+    type,
+    date: new Date().toLocaleDateString('zh-CN'),
+  });
+
+  try {
+    setFavorites(favs);
+  } catch (e) {
+    // localStorage 可能容量不够（粘贴图片体积大）
+    favs.shift();
+    showToast('存储空间不足，图片太大无法收藏');
+    return;
+  }
+  closeSaveModal();
+  renderFavorites();
+  showToast(`已收藏「${name}」`);
+}
+
+function editFavorite(index) {
+  const favs = getFavorites();
+  const newName = prompt('修改曲谱名称：', favs[index].name);
+  if (newName && newName.trim()) {
+    favs[index].name = newName.trim();
+    setFavorites(favs);
+    renderFavorites();
+  }
+}
+
+function deleteFavorite(index) {
+  const favs = getFavorites();
+  if (confirm(`确定删除「${favs[index].name}」？`)) {
+    favs.splice(index, 1);
+    setFavorites(favs);
+    renderFavorites();
+    showToast('已删除');
+  }
+}
+
+// ===== Tab Switching =====
+function switchTab(tab) {
+  state.activeTab = tab;
+  document.querySelectorAll('.input-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  if (tab === 'url') {
+    document.querySelectorAll('.input-tab')[0].classList.add('active');
+    document.getElementById('tabUrl').classList.add('active');
+  } else {
+    document.querySelectorAll('.input-tab')[1].classList.add('active');
+    document.getElementById('tabPaste').classList.add('active');
+  }
+}
+
+// ===== Paste Image Handling =====
+function addPastedImage(file) {
+  if (!file.type.startsWith('image/')) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    state.pastedImages.push({
+      blob: file,
+      dataUrl: e.target.result,
+    });
+    renderPastedImages();
+  };
+  reader.readAsDataURL(file);
+}
+
+function removePastedImage(index) {
+  state.pastedImages.splice(index, 1);
+  renderPastedImages();
+}
+
+function clearPastedImages() {
+  state.pastedImages = [];
+  renderPastedImages();
+}
+
+function renderPastedImages() {
+  const zone = document.getElementById('pasteZone');
+  const hint = document.getElementById('pasteHint');
+
+  if (state.pastedImages.length === 0) {
+    // 清除所有缩略图和 actions
+    zone.querySelectorAll('.paste-thumb, .paste-actions').forEach(el => el.remove());
+    hint.style.display = '';
+    zone.classList.remove('has-images');
+    return;
+  }
+
+  hint.style.display = 'none';
+  zone.classList.add('has-images');
+
+  // 清除旧的缩略图和 actions
+  zone.querySelectorAll('.paste-thumb, .paste-actions').forEach(el => el.remove());
+
+  state.pastedImages.forEach((item, i) => {
+    const thumb = document.createElement('div');
+    thumb.className = 'paste-thumb';
+    thumb.innerHTML = `
+      <img src="${item.dataUrl}" alt="第 ${i + 1} 页" />
+      <span class="thumb-index">${i + 1}</span>
+      <button class="thumb-remove" onclick="event.stopPropagation(); removePastedImage(${i})">×</button>
+    `;
+    zone.appendChild(thumb);
+  });
+
+  // 操作栏
+  const actions = document.createElement('div');
+  actions.className = 'paste-actions';
+  actions.innerHTML = `
+    <span class="paste-count">已添加 ${state.pastedImages.length} 张图片</span>
+    <button class="btn btn-small btn-danger" onclick="event.stopPropagation(); clearPastedImages()">🗑️ 清空</button>
+  `;
+  zone.appendChild(actions);
+}
+
+// Paste zone: 粘贴事件（全局，这样无论焦点在哪都能粘贴）
+document.addEventListener('paste', (e) => {
+  // 如果不在首页或者不在粘贴tab，忽略
+  if (document.getElementById('viewerPanel').style.display === 'flex') return;
+
+  const items = e.clipboardData && e.clipboardData.items;
+  if (!items) return;
+
+  let hasImage = false;
+  for (let i = 0; i < items.length; i++) {
+    if (items[i].type.startsWith('image/')) {
+      hasImage = true;
+      const file = items[i].getAsFile();
+      if (file) {
+        // 自动切换到粘贴tab
+        if (state.activeTab !== 'paste') switchTab('paste');
+        addPastedImage(file);
+      }
+    }
+  }
+  if (hasImage) {
+    e.preventDefault();
+    showToast('图片已粘贴');
+  }
+});
+
+// Paste zone: 拖拽事件
+const pasteZone = document.getElementById('pasteZone');
+
+pasteZone.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  pasteZone.classList.add('dragover');
+});
+
+pasteZone.addEventListener('dragleave', () => {
+  pasteZone.classList.remove('dragover');
+});
+
+pasteZone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  pasteZone.classList.remove('dragover');
+  const files = e.dataTransfer.files;
+  for (let i = 0; i < files.length; i++) {
+    addPastedImage(files[i]);
+  }
+  if (files.length > 0) showToast(`已添加 ${files.length} 张图片`);
+});
+
+// Paste zone: 点击选择文件
+pasteZone.addEventListener('click', (e) => {
+  if (e.target.closest('.thumb-remove')) return;
+  document.getElementById('fileInput').click();
+});
+
+document.getElementById('fileInput').addEventListener('change', (e) => {
+  const files = e.target.files;
+  for (let i = 0; i < files.length; i++) {
+    addPastedImage(files[i]);
+  }
+  if (files.length > 0) showToast(`已添加 ${files.length} 张图片`);
+  e.target.value = ''; // 允许重复选择同一文件
+});
+
+// ===== URL Parsing =====
+function parseUrls() {
+  const text = document.getElementById('urlInput').value.trim();
+  if (!text) return [];
+  return text.split('\n')
+    .map(line => line.trim())
+    .filter(line => line && (line.startsWith('http://') || line.startsWith('https://')));
+}
+
+// ===== Start Viewing =====
+function startViewing() {
+  if (state.activeTab === 'url') {
+    // URL 模式
+    const urls = parseUrls();
+    if (urls.length === 0) {
+      showToast('请输入至少一个有效的图片链接');
+      return;
+    }
+    state.urls = urls;
+    showLoading(true);
+    loadImages(urls);
+  } else {
+    // 粘贴图片模式
+    if (state.pastedImages.length === 0) {
+      showToast('请先粘贴或拖入至少一张图片');
+      return;
+    }
+    showLoading(true);
+    loadPastedImages(state.pastedImages);
+  }
+}
+
+function loadPastedImages(images) {
+  const container = document.getElementById('sheetContainer');
+  container.innerHTML = '';
+
+  images.forEach((item, index) => {
+    const img = document.createElement('img');
+    img.src = item.dataUrl;
+    img.alt = `曲谱第 ${index + 1} 页`;
+    img.draggable = false;
+    container.appendChild(img);
+  });
+
+  // dataUrl 图片是同步可用的，直接显示
+  showLoading(false);
+  showViewer();
+}
+
+function loadImages(urls) {
+  const container = document.getElementById('sheetContainer');
+  container.innerHTML = '';
+
+  let loaded = 0;
+  let successCount = 0;
+  const total = urls.length;
+
+  // 超时保护：15秒后如果还未完成，强制进入
+  const timeout = setTimeout(() => {
+    if (loaded < total) {
+      showLoading(false);
+      if (successCount > 0) {
+        showViewer();
+      } else {
+        showToast('图片加载超时，请检查链接是否可访问');
+      }
+    }
+  }, 15000);
+
+  urls.forEach((url, index) => {
+    const img = document.createElement('img');
+    // 不设置 crossOrigin，避免 CORS 策略阻止图片加载
+    // 只有需要读取图片像素数据时才需要 crossOrigin
+
+    img.onload = () => {
+      loaded++;
+      successCount++;
+      document.getElementById('loadingText').textContent =
+        `正在加载曲谱... (${loaded}/${total})`;
+      if (loaded === total) {
+        clearTimeout(timeout);
+        showLoading(false);
+        showViewer();
+      }
+    };
+
+    img.onerror = () => {
+      loaded++;
+      // 标记失败的图片，但不立即隐藏（可能是临时网络问题）
+      img.dataset.failed = 'true';
+      img.style.display = 'none';
+      document.getElementById('loadingText').textContent =
+        `正在加载曲谱... (${loaded}/${total})`;
+      if (loaded === total) {
+        clearTimeout(timeout);
+        showLoading(false);
+        if (successCount > 0) {
+          showViewer();
+        } else {
+          showToast('所有图片加载失败，请检查链接是否可访问');
+          // 停留在首页
+          document.getElementById('inputPanel').style.display = 'flex';
+        }
+      }
+    };
+
+    img.src = url;
+    img.alt = `曲谱第 ${index + 1} 页`;
+    img.draggable = false;
+    container.appendChild(img);
+  });
+}
+
+function showViewer() {
+  document.getElementById('inputPanel').style.display = 'none';
+  document.getElementById('viewerPanel').style.display = 'flex';
+
+  // 默认横向模式
+  state.layout = 'horizontal';
+  const container = document.getElementById('sheetContainer');
+  container.classList.remove('vertical');
+  container.classList.add('horizontal');
+
+  // 默认隐藏工具栏，让曲谱铺满全屏
+  state.toolbarVisible = false;
+  document.getElementById('toolbar').classList.add('hidden');
+
+  applyZoom();
+  updateLayoutBtn();
+  updateProgressBar();
+
+  // 默认进入全屏（仅桌面端）
+  const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || window.innerWidth <= 768;
+  if (!isMobileDevice) {
+    try {
+      document.documentElement.requestFullscreen();
+    } catch (e) { /* 用户可能需要手动允许 */ }
+  }
+}
+
+function backToHome() {
+  stopAutoScroll();
+  if (document.fullscreenElement) {
+    document.exitFullscreen();
+  }
+  document.getElementById('viewerPanel').style.display = 'none';
+  document.getElementById('inputPanel').style.display = 'flex';
+  // 重置状态
+  state.zoom = 100;
+  state.autoScroll = false;
+  state.layout = 'vertical';
+  const container = document.getElementById('sheetContainer');
+  container.classList.remove('horizontal');
+  container.classList.add('vertical');
+  container.scrollTop = 0;
+  container.scrollLeft = 0;
+  updateAutoScrollBtn();
+  document.getElementById('zoomDisplay').textContent = '100%';
+  document.getElementById('speedDisplay').textContent = '1.0x';
+  state.scrollSpeed = 1.0;
+}
+
+// ===== Layout =====
+function toggleLayout() {
+  const container = document.getElementById('sheetContainer');
+  if (state.layout === 'vertical') {
+    state.layout = 'horizontal';
+    container.classList.remove('vertical');
+    container.classList.add('horizontal');
+  } else {
+    state.layout = 'vertical';
+    container.classList.remove('horizontal');
+    container.classList.add('vertical');
+  }
+  applyZoom();
+  updateLayoutBtn();
+  container.scrollTop = 0;
+  container.scrollLeft = 0;
+}
+
+function updateLayoutBtn() {
+  const btn = document.getElementById('layoutBtn');
+  btn.textContent = state.layout === 'vertical' ? '📐 纵向' : '📐 横向';
+}
+
+// ===== Zoom =====
+function adjustZoom(delta) {
+  state.zoom = Math.max(30, Math.min(300, state.zoom + delta));
+  applyZoom();
+}
+
+function resetZoom() {
+  state.zoom = 100;
+  applyZoom();
+}
+
+function applyZoom() {
+  const container = document.getElementById('sheetContainer');
+  const pct = state.zoom;
+
+  if (state.layout === 'vertical') {
+    container.style.setProperty('--sheet-max-width', pct + '%');
+    container.querySelectorAll('img').forEach(img => {
+      if (img.dataset.failed === 'true') return;
+      img.style.width = '';
+      img.style.height = '';
+      img.style.maxWidth = pct + '%';
+      img.style.maxHeight = '';
+    });
+  } else {
+    container.querySelectorAll('img').forEach(img => {
+      if (img.dataset.failed === 'true') return;
+      img.style.maxWidth = '';
+      img.style.height = pct + 'vh';
+      img.style.maxHeight = pct + 'vh';
+      img.style.width = 'auto';
+    });
+  }
+
+  document.getElementById('zoomDisplay').textContent = pct + '%';
+}
+
+// ===== Auto Scroll =====
+function toggleAutoScroll() {
+  if (state.autoScroll) {
+    stopAutoScroll();
+  } else {
+    startAutoScroll();
+  }
+}
+
+function startAutoScroll() {
+  state.autoScroll = true;
+  updateAutoScrollBtn();
+  document.getElementById('scrollStatus').classList.add('visible');
+  scrollStep();
+}
+
+function stopAutoScroll() {
+  state.autoScroll = false;
+  if (state.scrollAnimId) {
+    cancelAnimationFrame(state.scrollAnimId);
+    state.scrollAnimId = null;
+  }
+  updateAutoScrollBtn();
+  document.getElementById('scrollStatus').classList.remove('visible');
+}
+
+function scrollStep() {
+  if (!state.autoScroll) return;
+  const container = document.getElementById('sheetContainer');
+
+  if (state.layout === 'vertical') {
+    container.scrollTop += state.scrollSpeed;
+  } else {
+    container.scrollLeft += state.scrollSpeed;
+  }
+
+  updateProgressBar();
+  state.scrollAnimId = requestAnimationFrame(scrollStep);
+}
+
+function adjustSpeed(delta) {
+  state.scrollSpeed = Math.max(0.5, Math.min(10, state.scrollSpeed + delta));
+  document.getElementById('speedDisplay').textContent = state.scrollSpeed.toFixed(1) + 'x';
+}
+
+function updateAutoScrollBtn() {
+  const btn = document.getElementById('autoScrollBtn');
+  if (state.autoScroll) {
+    btn.textContent = '⏸ 暂停';
+    btn.classList.add('active');
+  } else {
+    btn.textContent = '▶ 自动滚动';
+    btn.classList.remove('active');
+  }
+}
+
+// ===== Progress Bar =====
+function updateProgressBar() {
+  const container = document.getElementById('sheetContainer');
+  let progress = 0;
+
+  if (state.layout === 'vertical') {
+    const max = container.scrollHeight - container.clientHeight;
+    progress = max > 0 ? (container.scrollTop / max) * 100 : 0;
+  } else {
+    const max = container.scrollWidth - container.clientWidth;
+    progress = max > 0 ? (container.scrollLeft / max) * 100 : 0;
+  }
+
+  document.getElementById('progressBar').style.width = progress + '%';
+}
+
+// ===== Fullscreen =====
+function toggleFullscreen() {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen();
+  } else {
+    document.exitFullscreen();
+  }
+}
+
+// ===== Toolbar Toggle =====
+function toggleToolbar() {
+  state.toolbarVisible = !state.toolbarVisible;
+  document.getElementById('toolbar').classList.toggle('hidden', !state.toolbarVisible);
+}
+
+// ===== Shortcuts =====
+function showShortcuts() {
+  document.getElementById('shortcutsOverlay').classList.add('active');
+}
+
+function hideShortcuts() {
+  document.getElementById('shortcutsOverlay').classList.remove('active');
+}
+
+// ===== Loading =====
+function showLoading(show) {
+  document.getElementById('loadingOverlay').classList.toggle('active', show);
+}
+
+// ===== Toast =====
+function showToast(msg) {
+  const toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 2500);
+}
+
+// ===== Escape HTML =====
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// ===== Keyboard Shortcuts =====
+document.addEventListener('keydown', (e) => {
+  // Only in viewer mode
+  if (document.getElementById('viewerPanel').style.display !== 'flex') return;
+
+  // Ignore if modal/shortcuts overlay is open
+  if (document.getElementById('shortcutsOverlay').classList.contains('active')) {
+    if (e.key === 'Escape') hideShortcuts();
+    return;
+  }
+
+  const isMeta = e.metaKey || e.ctrlKey;
+
+  switch (e.key) {
+    case ' ':
+      e.preventDefault();
+      toggleAutoScroll();
+      break;
+    case 'ArrowUp':
+      if (!isMeta) { e.preventDefault(); adjustSpeed(0.5); }
+      break;
+    case 'ArrowDown':
+      if (!isMeta) { e.preventDefault(); adjustSpeed(-0.5); }
+      break;
+    case '+':
+    case '=':
+      if (isMeta) { e.preventDefault(); adjustZoom(10); }
+      else { adjustSpeed(0.5); }
+      break;
+    case '-':
+      if (isMeta) { e.preventDefault(); adjustZoom(-10); }
+      else { adjustSpeed(-0.5); }
+      break;
+    case '0':
+      if (isMeta) { e.preventDefault(); resetZoom(); }
+      break;
+    case 'l':
+    case 'L':
+      if (!isMeta) toggleLayout();
+      break;
+    case 't':
+    case 'T':
+      if (!isMeta) toggleToolbar();
+      break;
+    case 'f':
+    case 'F':
+      if (!isMeta) toggleFullscreen();
+      break;
+    case 'Escape':
+      if (document.fullscreenElement) {
+        document.exitFullscreen();
+      } else {
+        backToHome();
+      }
+      break;
+  }
+});
+
+// Scroll listener for progress bar
+document.getElementById('sheetContainer').addEventListener('scroll', () => {
+  updateProgressBar();
+});
+
+// 鼠标移到顶部 60px 区域自动显示工具栏，移走自动隐藏
+let toolbarAutoTimer = null;
+document.addEventListener('mousemove', (e) => {
+  if (document.getElementById('viewerPanel').style.display !== 'flex') return;
+
+  if (e.clientY <= 60) {
+    clearTimeout(toolbarAutoTimer);
+    document.getElementById('toolbar').classList.remove('hidden');
+    state.toolbarVisible = true;
+  } else if (state.toolbarVisible && e.clientY > 120) {
+    clearTimeout(toolbarAutoTimer);
+    toolbarAutoTimer = setTimeout(() => {
+      document.getElementById('toolbar').classList.add('hidden');
+      state.toolbarVisible = false;
+    }, 800);
+  }
+});
+
+// Save modal Enter key
+document.getElementById('favNameInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') saveFavorite();
+  if (e.key === 'Escape') closeSaveModal();
+});
+
+// ===== Init =====
+renderFavorites();
+
+// ===== Mobile Detection & Adaptation =====
+const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || window.innerWidth <= 768;
+
+// 粘贴区提示文案适配
+if (isMobile) {
+  const hintMain = document.getElementById('pasteHintMain');
+  const hintSub = document.getElementById('pasteHintSub');
+  if (hintMain) hintMain.textContent = '点击此处从相册选择图片';
+  if (hintSub) hintSub.textContent = '也支持直接粘贴剪贴板中的图片';
+}
+
+// ===== Mobile FAB Controls =====
+let mSpeedPopupVisible = false;
+let mFabLongTimer = null;
+
+function mobileToggleScroll() {
+  toggleAutoScroll();
+  updateMobileFab();
+}
+
+function updateMobileFab() {
+  const fab = document.getElementById('mFabScroll');
+  if (!fab) return;
+  if (state.autoScroll) {
+    fab.textContent = '⏸';
+    fab.classList.add('active');
+  } else {
+    fab.textContent = '▶';
+    fab.classList.remove('active');
+  }
+}
+
+function updateMobileSpeed() {
+  const el = document.getElementById('mSpeedValue');
+  if (el) el.textContent = state.scrollSpeed.toFixed(1) + 'x';
+}
+
+function showMobileSpeedPopup() {
+  const popup = document.getElementById('mSpeedPopup');
+  if (popup) {
+    mSpeedPopupVisible = true;
+    popup.classList.add('show');
+    updateMobileSpeed();
+  }
+}
+
+function hideMobileSpeedPopup() {
+  const popup = document.getElementById('mSpeedPopup');
+  if (popup) {
+    mSpeedPopupVisible = false;
+    popup.classList.remove('show');
+  }
+}
+
+// 长按右下角FAB弹出速度/缩放面板
+const mFabScroll = document.getElementById('mFabScroll');
+if (mFabScroll) {
+  mFabScroll.addEventListener('touchstart', (e) => {
+    mFabLongTimer = setTimeout(() => {
+      e.preventDefault();
+      if (mSpeedPopupVisible) {
+        hideMobileSpeedPopup();
+      } else {
+        showMobileSpeedPopup();
+      }
+    }, 500);
+  }, { passive: false });
+
+  mFabScroll.addEventListener('touchend', () => {
+    clearTimeout(mFabLongTimer);
+  });
+
+  mFabScroll.addEventListener('touchmove', () => {
+    clearTimeout(mFabLongTimer);
+  });
+}
+
+// 点击空白区域关闭速度弹窗
+document.addEventListener('touchstart', (e) => {
+  if (!mSpeedPopupVisible) return;
+  const popup = document.getElementById('mSpeedPopup');
+  const fab = document.getElementById('mFabScroll');
+  if (popup && !popup.contains(e.target) && fab && !fab.contains(e.target)) {
+    hideMobileSpeedPopup();
+  }
+}, { passive: true });
+
+// ===== Mobile: 点击谱面区域显示/隐藏工具栏提示 =====
+let mobileTapCount = 0;
+let mobileTapTimer = null;
+
+if (isMobile) {
+  document.getElementById('sheetContainer').addEventListener('click', (e) => {
+    if (document.getElementById('viewerPanel').style.display !== 'flex') return;
+
+    mobileTapCount++;
+    clearTimeout(mobileTapTimer);
+
+    mobileTapTimer = setTimeout(() => {
+      if (mobileTapCount === 2) {
+        // 双击：切换布局
+        toggleLayout();
+        showToast(state.layout === 'vertical' ? '纵向模式' : '横向模式');
+      }
+      mobileTapCount = 0;
+    }, 300);
+  });
+}
+
+// ===== Mobile: 首次进入查看器显示操作提示 =====
+let mobileHintShown = false;
+
+function showMobileTapHint() {
+  if (mobileHintShown || !isMobile) return;
+  mobileHintShown = true;
+  const hint = document.getElementById('mobileTapHint');
+  if (hint) {
+    hint.classList.add('show');
+    setTimeout(() => hint.classList.remove('show'), 3000);
+  }
+}
+
+// 修改 showViewer 以支持移动端提示
+const _origShowViewer = showViewer;
+showViewer = function() {
+  _origShowViewer();
+  updateMobileFab();
+  updateMobileSpeed();
+  // 移动端显示操作提示
+  setTimeout(showMobileTapHint, 500);
+  // 移动端不自动全屏（交给用户控制）
+};
+
+// 修改 stopAutoScroll/startAutoScroll 以更新 mobile fab
+const _origStartAutoScroll = startAutoScroll;
+startAutoScroll = function() {
+  _origStartAutoScroll();
+  updateMobileFab();
+};
+const _origStopAutoScroll = stopAutoScroll;
+stopAutoScroll = function() {
+  _origStopAutoScroll();
+  updateMobileFab();
+};
+
+// ===== Mobile: 双指缩放手势 =====
+let pinchStartDist = 0;
+let pinchStartZoom = 100;
+
+function getPinchDist(touches) {
+  const dx = touches[0].clientX - touches[1].clientX;
+  const dy = touches[0].clientY - touches[1].clientY;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+const sheetContainer = document.getElementById('sheetContainer');
+sheetContainer.addEventListener('touchstart', (e) => {
+  if (e.touches.length === 2) {
+    pinchStartDist = getPinchDist(e.touches);
+    pinchStartZoom = state.zoom;
+  }
+}, { passive: true });
+
+sheetContainer.addEventListener('touchmove', (e) => {
+  if (e.touches.length === 2) {
+    const dist = getPinchDist(e.touches);
+    const scale = dist / pinchStartDist;
+    const newZoom = Math.round(Math.max(30, Math.min(300, pinchStartZoom * scale)));
+    if (newZoom !== state.zoom) {
+      state.zoom = newZoom;
+      applyZoom();
+    }
+  }
+}, { passive: true });
+
+// ===== Mobile: 在查看器中处理全屏 =====
+// 移动端用showViewer时不自动requestFullscreen，改为覆盖原来的逻辑
+if (isMobile) {
+  // 在移动端覆盖showViewer的全屏逻辑 — 已由上方的showViewer覆写处理
+}
+
+// ===== Adjust: backToHome also hides mobile popup =====
+const _origBackToHome = backToHome;
+backToHome = function() {
+  hideMobileSpeedPopup();
+  _origBackToHome();
+};
+
+// ===== adjustSpeed also updates mobile speed display =====
+const _origAdjustSpeed = adjustSpeed;
+adjustSpeed = function(delta) {
+  _origAdjustSpeed(delta);
+  updateMobileSpeed();
+};
+</script>
+</body>
+</html>
