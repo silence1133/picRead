@@ -7,6 +7,8 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="mobile-web-app-capable" content="yes">
 <title>🎵 谱面阅读器 | Sheet Music Viewer</title>
+<!-- CloudBase JS SDK -->
+<script src="https://js.cbase.cn/latest/cloudbase-js-sdk/cloudbase-full.js"></script>
 <style>
   /* ===== CSS Variables & Reset ===== */
   :root {
@@ -1185,25 +1187,111 @@ let state = {
   pastedImages: [],       // array of { blob: Blob, dataUrl: string }
 };
 
-// ===== Favorites (localStorage) =====
-const FAV_KEY = 'sheetMusicFavorites';
+// ===== CloudBase Init =====
+const CLOUDBASE_ENV_ID = 'silen-0g528o05d731b9f7';
+const CLOUDBASE_PUBLISH_KEY = 'eyJhbGciOiJSUzI1NiIsImtpZCI6IjlkMWRjMzFlLWI0ZDAtNDQ4Yi1hNzZmLWIwY2M2M2Q4MTQ5OCJ9.eyJpc3MiOiJodHRwczovL3NpbGVuLTBnNTI4bzA1ZDczMWI5ZjcuYXAtc2hhbmdoYWkudGNiLWFwaS50ZW5jZW50Y2xvdWRhcGkuY29tIiwic3ViIjoiYW5vbiIsImF1ZCI6InNpbGVuLTBnNTI4bzA1ZDczMWI5ZjciLCJleHAiOjQwNzg0NjcxNDksImlhdCI6MTc3NDc4Mzk0OSwibm9uY2UiOiIwUWxDWEZyTVQtT2xmay1tc044M1V3IiwiYXRfaGFzaCI6IjBRbENYRnJNVC1PbGZrLW1zTjgzVXciLCJuYW1lIjoiQW5vbnltb3VzIiwic2NvcGUiOiJhbm9ueW1vdXMiLCJwcm9qZWN0X2lkIjoic2lsZW4tMGc1MjhvMDVkNzMxYjlmNyIsInVzZXJfdHlwZSI6IiIsImNsaWVudF90eXBlIjoiY2xpZW50X3VzZXIiLCJpc19zeXN0ZW1fYWRtaW4iOmZhbHNlfQ.GhEJFLoXN7W6qmGLObWV1vZsT6qn3xAcpxEqDan-VPMIP0KkUOyQPiKKaBgqYSQJCKEeWXqOzwx1M9GBWzfAndsuR74meeKeKg_ca9WLgmoSitYDBViFi0vS0TZk4n_Yv2r5jVb4cFbMAyvIXFfpLgziENqfRIlf43tKY0sqyKp8s--1vjGAi3EC-Yk-CSzdyaYy8r7hhM6lZJURB6pn_LCL6NYDwQsHAs2fayMnnrv3szpLNZp6q4QljYmCXkVwcm7PaEYv0hEYQ4r2igReJQLqdI3XkK_yPaqIyhP6WKBLW1DDV0nyI3gyYqcpUJUQyHx4TolWGKwSZ3aDpYBYYQ';
+const COLLECTION_NAME = 'picread_favorites';
 
-function getFavorites() {
+let cloudApp = null;
+let cloudDb = null;
+let cloudAuth = null;
+let cloudReady = false;
+let cachedFavorites = []; // 内存缓存
+
+async function initCloudBase() {
   try {
-    return JSON.parse(localStorage.getItem(FAV_KEY) || '[]');
-  } catch { return []; }
+    cloudApp = cloudbase.init({
+      env: CLOUDBASE_ENV_ID,
+      appSign: CLOUDBASE_PUBLISH_KEY,
+    });
+    cloudAuth = cloudApp.auth();
+    
+    // 匿名登录
+    const loginState = await cloudAuth.getLoginState();
+    if (!loginState) {
+      await cloudAuth.signInAnonymously();
+    }
+    
+    cloudDb = cloudApp.database();
+    cloudReady = true;
+    console.log('[CloudBase] 初始化成功，已匿名登录');
+    
+    // 从本地 localStorage 迁移数据到云端
+    await migrateLocalToCloud();
+    
+    // 加载云端收藏
+    await loadCloudFavorites();
+  } catch (err) {
+    console.error('[CloudBase] 初始化失败，回退到本地模式:', err);
+    cloudReady = false;
+    // 回退: 从 localStorage 加载
+    loadLocalFavorites();
+  }
 }
 
-function setFavorites(favs) {
-  localStorage.setItem(FAV_KEY, JSON.stringify(favs));
+// ===== 数据迁移: localStorage -> 云数据库 =====
+async function migrateLocalToCloud() {
+  const FAV_KEY = 'sheetMusicFavorites';
+  const MIGRATED_KEY = 'sheetMusicFavorites_migrated';
+  
+  if (localStorage.getItem(MIGRATED_KEY)) return; // 已迁移过
+  
+  try {
+    const localFavs = JSON.parse(localStorage.getItem(FAV_KEY) || '[]');
+    if (localFavs.length === 0) {
+      localStorage.setItem(MIGRATED_KEY, '1');
+      return;
+    }
+    
+    // 逐条写入云端（粘贴类型的 dataUrl 数据可能很大，跳过）
+    for (const fav of localFavs) {
+      if (fav.type === 'paste') continue; // 粘贴类型太大不迁移
+      await cloudDb.collection(COLLECTION_NAME).add({
+        name: fav.name,
+        urls: fav.urls,
+        type: fav.type || 'url',
+        date: fav.date,
+        createdAt: new Date().toISOString(),
+      });
+    }
+    
+    localStorage.setItem(MIGRATED_KEY, '1');
+    console.log('[CloudBase] 已迁移本地收藏到云端');
+  } catch (err) {
+    console.error('[CloudBase] 迁移失败:', err);
+  }
+}
+
+// ===== 云端收藏操作 =====
+async function loadCloudFavorites() {
+  try {
+    const res = await cloudDb.collection(COLLECTION_NAME)
+      .orderBy('createdAt', 'desc')
+      .limit(100)
+      .get();
+    cachedFavorites = res.data || [];
+    renderFavorites();
+  } catch (err) {
+    console.error('[CloudBase] 加载收藏失败:', err);
+    loadLocalFavorites();
+  }
+}
+
+function loadLocalFavorites() {
+  try {
+    cachedFavorites = JSON.parse(localStorage.getItem('sheetMusicFavorites') || '[]');
+    // 给本地数据添加兼容的 _id 字段
+    cachedFavorites.forEach((fav, i) => {
+      if (!fav._id) fav._id = 'local_' + i;
+    });
+  } catch { cachedFavorites = []; }
+  renderFavorites();
 }
 
 function renderFavorites() {
-  const favs = getFavorites();
-  const section = document.getElementById('favSection');
   const list = document.getElementById('favList');
 
-  if (favs.length === 0) {
+  if (cachedFavorites.length === 0) {
     list.innerHTML = `
       <div class="empty-state">
         <div class="icon">📂</div>
@@ -1212,11 +1300,11 @@ function renderFavorites() {
     return;
   }
 
-  list.innerHTML = favs.map((fav, i) => `
+  list.innerHTML = cachedFavorites.map((fav, i) => `
     <div class="fav-item" onclick="loadFavorite(${i})">
       <div class="fav-info">
         <div class="fav-name">🎵 ${escapeHtml(fav.name)}</div>
-        <div class="fav-meta">${fav.urls.length} 张图片 · ${fav.type === 'paste' ? '📋 本地粘贴' : '🔗 链接'} · ${fav.date}</div>
+        <div class="fav-meta">${fav.urls.length} 张图片 · ${fav.type === 'paste' ? '📋 本地粘贴' : '🔗 链接'} · ${fav.date}${cloudReady ? ' · ☁️ 已同步' : ''}</div>
       </div>
       <div class="fav-actions">
         <button class="btn btn-small btn-secondary" onclick="event.stopPropagation(); editFavorite(${i})">✏️</button>
@@ -1227,27 +1315,26 @@ function renderFavorites() {
 }
 
 function loadFavorite(index) {
-  const favs = getFavorites();
-  if (favs[index]) {
-    if (favs[index].type === 'paste') {
-      // 粘贴图片类型：直接进入查看
-      showLoading(true);
-      const container = document.getElementById('sheetContainer');
-      container.innerHTML = '';
-      favs[index].urls.forEach((dataUrl, i) => {
-        const img = document.createElement('img');
-        img.src = dataUrl;
-        img.alt = `曲谱第 ${i + 1} 页`;
-        img.draggable = false;
-        container.appendChild(img);
-      });
-      showLoading(false);
-      showViewer();
-    } else {
-      document.getElementById('urlInput').value = favs[index].urls.join('\n');
-      switchTab('url');
-      showToast(`已加载「${favs[index].name}」`);
-    }
+  const fav = cachedFavorites[index];
+  if (!fav) return;
+  
+  if (fav.type === 'paste') {
+    showLoading(true);
+    const container = document.getElementById('sheetContainer');
+    container.innerHTML = '';
+    fav.urls.forEach((dataUrl, i) => {
+      const img = document.createElement('img');
+      img.src = dataUrl;
+      img.alt = `曲谱第 ${i + 1} 页`;
+      img.draggable = false;
+      container.appendChild(img);
+    });
+    showLoading(false);
+    showViewer();
+  } else {
+    document.getElementById('urlInput').value = fav.urls.join('\n');
+    switchTab('url');
+    showToast(`已加载「${fav.name}」`);
   }
 }
 
@@ -1273,7 +1360,7 @@ function closeSaveModal() {
   document.getElementById('saveModal').classList.remove('active');
 }
 
-function saveFavorite() {
+async function saveFavorite() {
   const name = document.getElementById('favNameInput').value.trim();
   if (!name) {
     showToast('请输入曲谱名称');
@@ -1291,45 +1378,102 @@ function saveFavorite() {
     if (urls.length === 0) return;
   }
 
-  const favs = getFavorites();
-  favs.unshift({
+  const favData = {
     name,
     urls,
     type,
     date: new Date().toLocaleDateString('zh-CN'),
-  });
+    createdAt: new Date().toISOString(),
+  };
 
+  if (cloudReady && type !== 'paste') {
+    // 云端保存（粘贴类型数据太大，仅存本地）
+    try {
+      const res = await cloudDb.collection(COLLECTION_NAME).add(favData);
+      favData._id = res.id;
+      cachedFavorites.unshift(favData);
+      closeSaveModal();
+      renderFavorites();
+      showToast(`已收藏「${name}」☁️`);
+    } catch (err) {
+      console.error('[CloudBase] 保存失败:', err);
+      showToast('云端保存失败，已存到本地');
+      saveToLocal(favData);
+    }
+  } else {
+    // 本地保存（粘贴类型 或 云端未就绪）
+    saveToLocal(favData);
+  }
+}
+
+function saveToLocal(favData) {
   try {
-    setFavorites(favs);
+    const localFavs = JSON.parse(localStorage.getItem('sheetMusicFavorites') || '[]');
+    localFavs.unshift(favData);
+    localStorage.setItem('sheetMusicFavorites', JSON.stringify(localFavs));
+    if (!favData._id) favData._id = 'local_' + Date.now();
+    cachedFavorites.unshift(favData);
   } catch (e) {
-    // localStorage 可能容量不够（粘贴图片体积大）
-    favs.shift();
     showToast('存储空间不足，图片太大无法收藏');
     return;
   }
   closeSaveModal();
   renderFavorites();
-  showToast(`已收藏「${name}」`);
+  showToast(`已收藏「${favData.name}」`);
 }
 
-function editFavorite(index) {
-  const favs = getFavorites();
-  const newName = prompt('修改曲谱名称：', favs[index].name);
-  if (newName && newName.trim()) {
-    favs[index].name = newName.trim();
-    setFavorites(favs);
-    renderFavorites();
+async function editFavorite(index) {
+  const fav = cachedFavorites[index];
+  if (!fav) return;
+  
+  const newName = prompt('修改曲谱名称：', fav.name);
+  if (!newName || !newName.trim()) return;
+  
+  fav.name = newName.trim();
+  
+  if (cloudReady && fav._id && !fav._id.startsWith('local_')) {
+    try {
+      await cloudDb.collection(COLLECTION_NAME).doc(fav._id).update({
+        name: fav.name,
+      });
+    } catch (err) {
+      console.error('[CloudBase] 更新失败:', err);
+    }
+  } else {
+    // 更新本地存储
+    updateLocalFavorites();
   }
+  
+  renderFavorites();
 }
 
-function deleteFavorite(index) {
-  const favs = getFavorites();
-  if (confirm(`确定删除「${favs[index].name}」？`)) {
-    favs.splice(index, 1);
-    setFavorites(favs);
-    renderFavorites();
-    showToast('已删除');
+async function deleteFavorite(index) {
+  const fav = cachedFavorites[index];
+  if (!fav) return;
+  
+  if (!confirm(`确定删除「${fav.name}」？`)) return;
+  
+  if (cloudReady && fav._id && !fav._id.startsWith('local_')) {
+    try {
+      await cloudDb.collection(COLLECTION_NAME).doc(fav._id).remove();
+    } catch (err) {
+      console.error('[CloudBase] 删除失败:', err);
+    }
+  } else {
+    // 从本地存储中删除
+    const localFavs = JSON.parse(localStorage.getItem('sheetMusicFavorites') || '[]');
+    localFavs.splice(index, 1);
+    localStorage.setItem('sheetMusicFavorites', JSON.stringify(localFavs));
   }
+  
+  cachedFavorites.splice(index, 1);
+  renderFavorites();
+  showToast('已删除');
+}
+
+function updateLocalFavorites() {
+  const localFavs = cachedFavorites.filter(f => f._id && f._id.startsWith('local_'));
+  localStorage.setItem('sheetMusicFavorites', JSON.stringify(localFavs));
 }
 
 // ===== Tab Switching =====
@@ -1898,7 +2042,9 @@ document.getElementById('favNameInput').addEventListener('keydown', (e) => {
 });
 
 // ===== Init =====
+// 先渲染本地缓存（避免白屏），再异步初始化云端
 renderFavorites();
+initCloudBase();
 
 // ===== Mobile Detection & Adaptation =====
 const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || window.innerWidth <= 768;
