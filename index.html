@@ -7,8 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="mobile-web-app-capable" content="yes">
 <title>🎵 谱面阅读器 | Sheet Music Viewer</title>
-<!-- CloudBase JS SDK -->
-<script src="https://js.cbase.cn/latest/cloudbase-js-sdk/cloudbase-full.js"></script>
+<!-- CloudBase API (via HTTP cloud function, no SDK needed) -->
 <style>
   /* ===== CSS Variables & Reset ===== */
   :root {
@@ -1187,42 +1186,37 @@ let state = {
   pastedImages: [],       // array of { blob: Blob, dataUrl: string }
 };
 
-// ===== CloudBase Init =====
-const CLOUDBASE_ENV_ID = 'silen-0g528o05d731b9f7';
-const CLOUDBASE_PUBLISH_KEY = 'eyJhbGciOiJSUzI1NiIsImtpZCI6IjlkMWRjMzFlLWI0ZDAtNDQ4Yi1hNzZmLWIwY2M2M2Q4MTQ5OCJ9.eyJpc3MiOiJodHRwczovL3NpbGVuLTBnNTI4bzA1ZDczMWI5ZjcuYXAtc2hhbmdoYWkudGNiLWFwaS50ZW5jZW50Y2xvdWRhcGkuY29tIiwic3ViIjoiYW5vbiIsImF1ZCI6InNpbGVuLTBnNTI4bzA1ZDczMWI5ZjciLCJleHAiOjQwNzg0NjcxNDksImlhdCI6MTc3NDc4Mzk0OSwibm9uY2UiOiIwUWxDWEZyTVQtT2xmay1tc044M1V3IiwiYXRfaGFzaCI6IjBRbENYRnJNVC1PbGZrLW1zTjgzVXciLCJuYW1lIjoiQW5vbnltb3VzIiwic2NvcGUiOiJhbm9ueW1vdXMiLCJwcm9qZWN0X2lkIjoic2lsZW4tMGc1MjhvMDVkNzMxYjlmNyIsInVzZXJfdHlwZSI6IiIsImNsaWVudF90eXBlIjoiY2xpZW50X3VzZXIiLCJpc19zeXN0ZW1fYWRtaW4iOmZhbHNlfQ.GhEJFLoXN7W6qmGLObWV1vZsT6qn3xAcpxEqDan-VPMIP0KkUOyQPiKKaBgqYSQJCKEeWXqOzwx1M9GBWzfAndsuR74meeKeKg_ca9WLgmoSitYDBViFi0vS0TZk4n_Yv2r5jVb4cFbMAyvIXFfpLgziENqfRIlf43tKY0sqyKp8s--1vjGAi3EC-Yk-CSzdyaYy8r7hhM6lZJURB6pn_LCL6NYDwQsHAs2fayMnnrv3szpLNZp6q4QljYmCXkVwcm7PaEYv0hEYQ4r2igReJQLqdI3XkK_yPaqIyhP6WKBLW1DDV0nyI3gyYqcpUJUQyHx4TolWGKwSZ3aDpYBYYQ';
-const COLLECTION_NAME = 'picread_favorites';
+// ===== CloudBase HTTP API =====
+const API_BASE = 'https://silen-0g528o05d731b9f7-1330151851.ap-shanghai.app.tcloudbase.com/picread_api';
 
-let cloudApp = null;
-let cloudDb = null;
-let cloudAuth = null;
 let cloudReady = false;
 let cachedFavorites = []; // 内存缓存
 
+async function callApi(action, data = {}) {
+  const res = await fetch(API_BASE, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, ...data }),
+  });
+  const json = await res.json();
+  if (!json.success) throw new Error(json.error || 'API error');
+  return json.data;
+}
+
 async function initCloudBase() {
   try {
-    cloudApp = cloudbase.init({
-      env: CLOUDBASE_ENV_ID,
-      appSign: CLOUDBASE_PUBLISH_KEY,
-    });
-    cloudAuth = cloudApp.auth();
-    
-    // 匿名登录
-    const loginState = await cloudAuth.getLoginState();
-    if (!loginState) {
-      await cloudAuth.signInAnonymously();
-    }
-    
-    cloudDb = cloudApp.database();
+    // 测试 API 连通性，同时加载收藏列表
+    const data = await callApi('list');
+    cachedFavorites = data || [];
     cloudReady = true;
-    console.log('[CloudBase] 初始化成功，已匿名登录');
+    console.log('[CloudBase API] 连接成功，已加载', cachedFavorites.length, '条收藏');
     
     // 从本地 localStorage 迁移数据到云端
     await migrateLocalToCloud();
     
-    // 加载云端收藏
-    await loadCloudFavorites();
+    renderFavorites();
   } catch (err) {
-    console.error('[CloudBase] 初始化失败，回退到本地模式:', err);
+    console.error('[CloudBase API] 连接失败，回退到本地模式:', err);
     cloudReady = false;
     // 回退: 从 localStorage 加载
     loadLocalFavorites();
@@ -1232,7 +1226,7 @@ async function initCloudBase() {
 // ===== 数据迁移: localStorage -> 云数据库 =====
 async function migrateLocalToCloud() {
   const FAV_KEY = 'sheetMusicFavorites';
-  const MIGRATED_KEY = 'sheetMusicFavorites_migrated';
+  const MIGRATED_KEY = 'sheetMusicFavorites_migrated_v2';
   
   if (localStorage.getItem(MIGRATED_KEY)) return; // 已迁移过
   
@@ -1246,34 +1240,23 @@ async function migrateLocalToCloud() {
     // 逐条写入云端（粘贴类型的 dataUrl 数据可能很大，跳过）
     for (const fav of localFavs) {
       if (fav.type === 'paste') continue; // 粘贴类型太大不迁移
-      await cloudDb.collection(COLLECTION_NAME).add({
+      await callApi('add', {
         name: fav.name,
         urls: fav.urls,
         type: fav.type || 'url',
         date: fav.date,
-        createdAt: new Date().toISOString(),
       });
     }
     
+    // 迁移后重新加载
+    const data = await callApi('list');
+    cachedFavorites = data || [];
+    
     localStorage.setItem(MIGRATED_KEY, '1');
-    console.log('[CloudBase] 已迁移本地收藏到云端');
-  } catch (err) {
-    console.error('[CloudBase] 迁移失败:', err);
-  }
-}
-
-// ===== 云端收藏操作 =====
-async function loadCloudFavorites() {
-  try {
-    const res = await cloudDb.collection(COLLECTION_NAME)
-      .orderBy('createdAt', 'desc')
-      .limit(100)
-      .get();
-    cachedFavorites = res.data || [];
+    console.log('[CloudBase API] 已迁移本地收藏到云端');
     renderFavorites();
   } catch (err) {
-    console.error('[CloudBase] 加载收藏失败:', err);
-    loadLocalFavorites();
+    console.error('[CloudBase API] 迁移失败:', err);
   }
 }
 
@@ -1389,14 +1372,14 @@ async function saveFavorite() {
   if (cloudReady && type !== 'paste') {
     // 云端保存（粘贴类型数据太大，仅存本地）
     try {
-      const res = await cloudDb.collection(COLLECTION_NAME).add(favData);
+      const res = await callApi('add', { name, urls, type, date: favData.date });
       favData._id = res.id;
       cachedFavorites.unshift(favData);
       closeSaveModal();
       renderFavorites();
       showToast(`已收藏「${name}」☁️`);
     } catch (err) {
-      console.error('[CloudBase] 保存失败:', err);
+      console.error('[CloudBase API] 保存失败:', err);
       showToast('云端保存失败，已存到本地');
       saveToLocal(favData);
     }
@@ -1433,11 +1416,9 @@ async function editFavorite(index) {
   
   if (cloudReady && fav._id && !fav._id.startsWith('local_')) {
     try {
-      await cloudDb.collection(COLLECTION_NAME).doc(fav._id).update({
-        name: fav.name,
-      });
+      await callApi('update', { id: fav._id, name: fav.name });
     } catch (err) {
-      console.error('[CloudBase] 更新失败:', err);
+      console.error('[CloudBase API] 更新失败:', err);
     }
   } else {
     // 更新本地存储
@@ -1455,9 +1436,9 @@ async function deleteFavorite(index) {
   
   if (cloudReady && fav._id && !fav._id.startsWith('local_')) {
     try {
-      await cloudDb.collection(COLLECTION_NAME).doc(fav._id).remove();
+      await callApi('delete', { id: fav._id });
     } catch (err) {
-      console.error('[CloudBase] 删除失败:', err);
+      console.error('[CloudBase API] 删除失败:', err);
     }
   } else {
     // 从本地存储中删除
